@@ -3,9 +3,15 @@ import httpx
 import os
 import dotenv
 from typing import Any
+from fastapi import FastAPI
 from mcp.server.fastmcp import FastMCP
 
+# from mcp.server.sse import sse_app
+
 dotenv.load_dotenv()
+
+# 創建 FastAPI 應用
+app = FastAPI()
 
 # 初始化 MCP 服务器
 mcp = FastMCP("WeatherServer")
@@ -84,6 +90,10 @@ async def query_weather(city: str) -> str:
     data = await fetch_weather(city)
     return format_weather(data)
 
+# # 將 MCP 伺服器掛載到 FastAPI 應用
+# app.mount("/mcp", sse_app(mcp))
+
 if __name__ == "__main__":
-    # 使用標準I/O的方式來啟動MCP Server
-    mcp.run(transport='stdio')
+    # import uvicorn
+    # 使用 uvicorn 啟動 FastAPI 應用
+    mcp.run(transport='sse')

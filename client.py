@@ -7,8 +7,9 @@ from contextlib import AsyncExitStack
 from openai import OpenAI
 from dotenv import load_dotenv
 
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
+from mcp import ClientSession
+from mcp.client.sse import sse_client
+from anthropic import Anthropic
 
 # 載入環境變量
 load_dotenv()
@@ -28,37 +29,56 @@ class MCPClient:
         self.client = OpenAI(api_key=self.openai_api_key)
         self.session : Optional[ClientSession] = None
         self.exit_stack = AsyncExitStack()
+        self.anthropic = Anthropic()
         
-    async def connect_to_server(self, server_script_path: str):
-        """
-        連接至遠端 MCP Server，並列出可用工具
-        Args:
-            server_script_path (str): MCP Server 腳本路徑
-        """
-        is_python = server_script_path.endswith('.py')
-        is_js = server_script_path.endswith('.js')
-        if not (is_python or is_js):
-            raise ValueError("不支援的檔案類型，請使用 .py 或 .js 文件。")
+    # async def connect_to_server(self, server_script_path: str):
+    #     """
+    #     連接至遠端 MCP Server，並列出可用工具
+    #     Args:
+    #         server_script_path (str): MCP Server 腳本路徑
+    #     """
+    #     is_python = server_script_path.endswith('.py')
+    #     is_js = server_script_path.endswith('.js')
+    #     if not (is_python or is_js):
+    #         raise ValueError("不支援的檔案類型，請使用 .py 或 .js 文件。")
         
-        command = 'python' if is_python else 'node'
-        server_params = StdioServerParameters(
-            command = command,
-            args = [server_script_path],
-            env = None
-        )
+    #     command = 'python' if is_python else 'node'
+    #     server_params = StdioServerParameters(
+    #         command = command,
+    #         args = [server_script_path],
+    #         env = None
+    #     )
 
-        # 啟動MCP Server並建立連線
-        stdio_transport = await self.exit_stack.enter_async_context(stdio_client(server_params))
-        self.stdio, self.write = stdio_transport
-        self.session = await self.exit_stack.enter_async_context(ClientSession(self.stdio, self.write))
+    #     # 啟動MCP Server並建立連線
+    #     stdio_transport = await self.exit_stack.enter_async_context(stdio_client(server_params))
+    #     self.stdio, self.write = stdio_transport
+    #     self.session = await self.exit_stack.enter_async_context(ClientSession(self.stdio, self.write))
 
+    #     await self.session.initialize()
+        
+    #     # 列出MCP Server上可用工具
+    #     response = await self.session.list_tools()
+    #     tools = response.tools
+    #     print("\n已連線到MCP Server，可用工具包含：", [tool.name for tool in tools])
+        
+    async def connect_to_sse_server(self, server_url: str):
+        """Connect to an MCP server running with SSE transport"""
+        # Store the context managers so they stay alive
+        self._streams_context = sse_client(url=server_url)
+        streams = await self._streams_context.__aenter__()
+
+        self._session_context = ClientSession(*streams)
+        self.session: ClientSession = await self._session_context.__aenter__()
+
+        # Initialize
         await self.session.initialize()
-        
-        # 列出MCP Server上可用工具
+
+        # List available tools to verify connection
+        print("Initialized SSE client...")
+        print("Listing tools...")
         response = await self.session.list_tools()
         tools = response.tools
-        print("\n已連線到MCP Server，可用工具包含：", [tool.name for tool in tools])
-        
+        print("\nConnected to server with tools:", [tool.name for tool in tools])
 
     async def process_query(self, query: str) -> str:
         """調用OpenAI API處理用戶聊天請求，並且調用可使用的MCP工具(Function Calling)"""
@@ -91,19 +111,6 @@ class MCPClient:
             messages = messages,
             tools = available_tools,
         )
-        
-        # try:
-        #     # 調用OpenAI API
-        #     response = await asyncio.get_event_loop().run_in_executor(
-        #         None,
-        #         lambda: self.client.chat.completions.create(
-        #             model = self.model,
-        #             messages = messages,
-        #         )
-        #     )
-        #     return response.choices[0].message.content
-        # except Exception as e:
-        #     return f"⚠️調用API時發生錯誤：{str(e)}"
         
         # 處理OpenAI API的回應
         content = response.choices[0]
@@ -161,7 +168,7 @@ async def main():
         
     client = MCPClient()
     try:
-        await client.connect_to_server(sys.argv[1])
+        await client.connect_to_sse_server(server_url=sys.argv[1])
         await client.chat_loop()
     finally:
         await client.cleanup()
