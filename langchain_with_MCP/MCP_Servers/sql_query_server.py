@@ -163,10 +163,40 @@ def format_query_result(result: List[Dict[str, Any]] | Dict[str, str]) -> str:
 @mcp.tool()
 async def query_database(query: str) -> str:
     """
-    執行 SQL 查詢並返回格式化結果。
-    僅支援 SELECT 等讀取操作，不支援修改資料庫的操作。
+    執行 SQL 查詢並返回格式化結果，支援查詢銷售數據庫中的資料。
     
-    :param query: SQL 查詢語句 (如: SELECT * FROM users LIMIT 10)
+    ## 使用場景
+    - 查詢銷售數據分析
+    - 獲取區域、城市或產品的銷售統計
+    - 比較不同時間段的銷售表現
+    - 分析產品類別的銷售趨勢
+    
+    ## 參數說明
+    :param query: SQL 查詢語句 (僅支援 SELECT 操作)
+    
+    ## 資料庫結構
+    資料庫包含 'sales' 表，具有以下欄位：
+    - ID (VARCHAR)：銷售記錄ID
+    - Date (DATE)：銷售日期
+    - Region (VARCHAR)：地區，值包括：関東, 関西
+    - City (VARCHAR)：城市，值包括：東京, 横浜, 埼玉, 千葉, 京都, 大阪, 神戸
+    - Category (VARCHAR)：類別，值包括：野菜, 果物
+    - Product (VARCHAR)：產品名稱，如：キャベツ, 玉ねぎ, トマト, リンゴ, みかん, バナナ
+    - Quantity (INT)：銷售數量
+    - Unit_Price (DECIMAL)：單價
+    - Total_Price (DECIMAL)：總價
+    
+    ## 輸入範例
+    - "SELECT * FROM sales LIMIT 5" - 查詢前5筆銷售記錄
+    - "SELECT Region, SUM(Total_Price) FROM sales GROUP BY Region" - 按地區統計銷售總額
+    - "SELECT Product, SUM(Quantity) FROM sales WHERE Category='果物' GROUP BY Product ORDER BY SUM(Quantity) DESC" - 查詢水果類銷量最高的產品
+    - "SELECT City, AVG(Unit_Price) FROM sales WHERE Product='リンゴ' GROUP BY City" - 查詢各城市蘋果的平均單價
+    
+    ## 注意事項
+    - 僅支援 SELECT 等讀取操作，不支援修改資料庫的操作
+    - 查詢結果將自動格式化為易讀的表格
+    - 較複雜的查詢可能需要幾秒鐘處理時間
+    
     :return: 格式化後的查詢結果
     """
     # 檢查是否為 SELECT 查詢

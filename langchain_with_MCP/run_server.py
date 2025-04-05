@@ -5,6 +5,8 @@ import time
 import signal
 import threading
 import sys
+import socket
+import psutil
 
 # MCP 伺服器配置
 SERVER_CONFIGS = {
@@ -55,62 +57,112 @@ def read_process_output(process, name, output_type):
             server_logs[log_key].append(line_str)
             print(f"[{name}] [{output_type}] {line_str}")
 
+def check_and_kill_process_on_port(port):
+    """檢查指定端口是否被佔用，如果被佔用則嘗試終止佔用該端口的進程"""
+    try:
+        # 創建一個socket來嘗試綁定端口
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(1)
+        result = sock.connect_ex(('127.0.0.1', port))
+        sock.close()
+        
+        # 如果端口可用（連接失敗），則返回
+        if result != 0:
+            print(f"端口 {port} 可用。")
+            return True
+        
+        print(f"端口 {port} 被佔用，嘗試終止佔用進程...")
+        
+        # 查找佔用該端口的進程
+        for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+            try:
+                for conn in proc.connections(kind='inet'):
+                    if conn.laddr.port == port:
+                        print(f"發現佔用端口 {port} 的進程: PID={proc.pid}, 名稱={proc.name()}")
+                        
+                        # 終止進程
+                        proc.terminate()
+                        print(f"已發送終止信號到進程 {proc.pid}")
+                        
+                        # 等待進程終止（最多等待5秒）
+                        proc.wait(5)
+                        print(f"進程 {proc.pid} 已終止")
+                        
+                        # 再次檢查端口是否可用
+                        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                        sock.settimeout(1)
+                        result = sock.connect_ex(('127.0.0.1', port))
+                        sock.close()
+                        
+                        if result != 0:
+                            print(f"端口 {port} 現在可用。")
+                            return True
+                        else:
+                            print(f"端口 {port} 仍然被佔用，嘗試強制終止進程...")
+                            proc.kill()  # 強制終止
+                            time.sleep(1)  # 等待操作系統釋放端口
+                            return check_and_kill_process_on_port(port)  # 遞歸檢查
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                pass
+        
+        # 如果找不到具體進程但端口仍被佔用
+        print(f"無法找到佔用端口 {port} 的具體進程。")
+        return False
+    
+    except Exception as e:
+        print(f"檢查端口 {port} 時出錯: {e}")
+        return False
+
+def ensure_ports_available():
+    """確保所有配置的端口都可用"""
+    print("\n===== 檢查並確保所有端口可用 =====\n")
+    
+    for name, config in SERVER_CONFIGS.items():
+        port = config["port"]
+        print(f"檢查 {name} 伺服器的端口 {port}...")
+        if check_and_kill_process_on_port(port):
+            print(f"{name} 伺服器的端口 {port} 已準備就緒。")
+        else:
+            print(f"警告: 無法釋放 {name} 伺服器的端口 {port}。")
+
 def start_server(name, config):
     """啟動 MCP 伺服器並返回進程"""
-    # 嘗試運行伺服器 - 如果端口已被占用，嘗試下一個可用端口
-    original_port = config["port"]
-    current_port = original_port
-    max_port_tries = 5  # 最多嘗試5個端口
+    # 使用配置中指定的端口
+    cmd = ["python", config["path"], "--port", str(config["port"])]
+    print(f"啟動伺服器: {name} - {' '.join(cmd)}")
     
-    for attempt in range(max_port_tries):
-        # 使用當前端口
-        cmd = ["python", config["path"], "--port", str(current_port)]
-        print(f"啟動伺服器: {name} - {' '.join(cmd)}")
-        
-        # 啟動進程
-        process = subprocess.Popen(
-            cmd, 
-            stdout=subprocess.PIPE, 
-            stderr=subprocess.PIPE,
-            text=True,
-            bufsize=1
-        )
-        
-        # 啟動讀取輸出的線程
-        stdout_thread = threading.Thread(
-            target=read_process_output, 
-            args=(process, name, "stdout"), 
-            daemon=True
-        )
-        stderr_thread = threading.Thread(
-            target=read_process_output, 
-            args=(process, name, "stderr"), 
-            daemon=True
-        )
-        stdout_thread.start()
-        stderr_thread.start()
-        
-        # 等待一段時間，檢查進程是否成功啟動
-        time.sleep(2)
-        if process.poll() is not None:
-            # 進程已終止，可能是端口被占用
-            print(f"伺服器 {name} 在端口 {current_port} 啟動失敗，可能是端口被占用")
-            # 嘗試下一個端口
-            current_port = original_port + attempt + 1
-            if attempt < max_port_tries - 1:
-                print(f"嘗試端口 {current_port}")
-                continue
-            else:
-                print(f"已嘗試所有可用端口，無法啟動伺服器 {name}")
-                return None
-        
-        # 如果端口已更改，更新配置中的端口
-        if current_port != original_port:
-            config["port"] = current_port
-            print(f"伺服器 {name} 現在使用端口 {current_port}")
-        
-        print(f"伺服器 {name} 已成功啟動在端口 {current_port}")
-        return process
+    # 啟動進程
+    process = subprocess.Popen(
+        cmd, 
+        stdout=subprocess.PIPE, 
+        stderr=subprocess.PIPE,
+        text=True,
+        bufsize=1
+    )
+    
+    # 啟動讀取輸出的線程
+    stdout_thread = threading.Thread(
+        target=read_process_output, 
+        args=(process, name, "stdout"), 
+        daemon=True
+    )
+    stderr_thread = threading.Thread(
+        target=read_process_output, 
+        args=(process, name, "stderr"), 
+        daemon=True
+    )
+    stdout_thread.start()
+    stderr_thread.start()
+    
+    # 等待一段時間，檢查進程是否成功啟動
+    time.sleep(2)
+    if process.poll() is not None:
+        # 進程已終止，發生了某些錯誤
+        print(f"伺服器 {name} 在端口 {config['port']} 啟動失敗")
+        return None
+    
+    print(f"伺服器 {name} 已成功啟動在端口 {config['port']}")
+    return process
 
 def stop_server(name):
     """停止指定的 MCP 伺服器"""
@@ -165,6 +217,9 @@ def start_all_servers():
     
     # 清空日誌
     server_logs.clear()
+    
+    # 確保所有端口可用
+    ensure_ports_available()
     
     # 啟動所有伺服器
     for name, config in SERVER_CONFIGS.items():

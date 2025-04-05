@@ -11,7 +11,7 @@ from mcp.server.fastmcp import FastMCP
 
 # 解析命令行參數
 parser = argparse.ArgumentParser(description='天氣查詢MCP服務器')
-parser.add_argument('--port', type=int, default=8003, help='服務器監聽端口 (默認: 8003)')
+parser.add_argument('--port', type=int, default=8001, help='服務器監聽端口 (默認: 8001)')
 args = parser.parse_args()
 
 # 設置環境變數，讓 FastMCP 使用指定的端口
@@ -92,8 +92,27 @@ def format_weather(data: dict[str, Any] | str) -> str:
 @mcp.tool()
 async def query_weather(city: str) -> str:
     """
-    輸入指定城市的英文名稱，系統會返回今天天氣查詢結果。
+    查詢指定城市的天氣資訊，提供當前溫度、天氣狀況、濕度等資料。
+    
+    ## 使用場景
+    - 規劃旅行或戶外活動
+    - 查詢特定城市的天氣狀況
+    - 了解天氣趨勢以做出決策
+    
+    ## 參數說明
     :param city: 城市名稱（需使用英文）
+    
+    ## 輸入範例
+    - "Taipei" - 查詢台北市天氣
+    - "Tokyo" - 查詢東京天氣
+    - "New York" - 查詢紐約天氣
+    - "London" - 查詢倫敦天氣
+    
+    ## 注意事項
+    - 城市名稱必須使用英文
+    - 對於有空格的城市名稱，請保留空格（例如："New York"）
+    - 結果包含溫度、濕度、風速等信息
+    
     :return: 格式化後的天氣資訊
     """
     data = await fetch_weather(city)
