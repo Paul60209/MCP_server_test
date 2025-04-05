@@ -1,0 +1,3 @@
+weather:8001:sse
+sql_query:8002:sse
+ppt_translator:8003:sse

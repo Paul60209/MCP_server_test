@@ -1,0 +1,30 @@
+{
+  "ui": {
+    "name": "MCP 多功能助手",
+    "description": "基於LangChain和MCP的多功能助手",
+    "theme": "system",
+    "hide_cot": false,
+    "avatar_url": null,
+    "favicon": null
+  },
+  "project": {
+    "enable_email_notifications": false,
+    "enable_users": false,
+    "require_login": false,
+    "enable_chat_history": true,
+    "enable_feedback": true,
+    "enable_visitor_messages": true
+  },
+  "features": {
+    "vision": false,
+    "speech": false,
+    "latex": false,
+    "disable_human_feedback": false,
+    "markdown_escaping": "off"
+  },
+  "callbacks": {
+    "on_chat_start": true,
+    "on_message": true,
+    "on_chat_end": true
+  }
+} 
